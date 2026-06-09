@@ -135,6 +135,11 @@ const storage = {
 
         if (storedSettings) {
             state.settings = JSON.parse(storedSettings);
+            // Migrate old settings name if it's still 'Soto Pak Wahyu'
+            if (state.settings.name && state.settings.name.trim().toLowerCase() === 'soto pak wahyu') {
+                state.settings.name = 'Soto Pak Asyari';
+                this.saveSettings();
+            }
         } else {
             state.settings = { ...DEFAULT_SETTINGS };
             this.saveSettings();
@@ -1223,7 +1228,7 @@ function exportTransactionsToCSV() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Riwayat_Transaksi_Soto_Pak_Wahyu_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Riwayat_Transaksi_${state.settings.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
