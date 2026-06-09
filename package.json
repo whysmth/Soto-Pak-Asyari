@@ -1,0 +1,22 @@
+{
+  "name": "soto-pak-wahyu-pos",
+  "version": "1.0.0",
+  "description": "Aplikasi Kasir Digital Lengkap untuk Warung Soto Pak Asyari",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "pos",
+    "cashier",
+    "soto",
+    "system"
+  ],
+  "author": "Pak Asyari",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^5.2.0"
+  }
+}
