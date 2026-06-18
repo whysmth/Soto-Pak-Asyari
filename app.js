@@ -50,6 +50,11 @@ const RECIPE_MAP = {
     'item-14': [{ name: 'Beras/Nasi (Porsi)', qty: 1 }]
 };
 
+const USERS = {
+    admin: { username: 'admin', password: 'admin123', name: 'Pak Asyari', role: 'Pemilik Warung', avatar: 'PA' },
+    kasir: { username: 'kasir', password: 'kasir123', name: 'Staff Kasir', role: 'Kasir Shift', avatar: 'SK' }
+};
+
 let state = {
     menuItems: [],
     cart: [],
@@ -58,8 +63,17 @@ let state = {
     ingredients: [],
     activeTab: 'dashboard',
     selectedPaymentMethod: 'Tunai',
-    settings: {}
+    settings: {},
+    currentUser: null
 };
+
+function checkAdminRole() {
+    if (!state.currentUser || state.currentUser.username !== 'admin') {
+        showToast('Akses Ditolak! Hanya Pemilik Warung yang diperbolehkan melakukan tindakan ini.', 'error');
+        return false;
+    }
+    return true;
+}
 
 // 2. Pre-populated Default Indonesian Menu Items
 const DEFAULT_MENU_ITEMS = [
@@ -261,7 +275,6 @@ function generateMockTransactions() {
 document.addEventListener('DOMContentLoaded', () => {
     storage.load();
     generateMockTransactions();
-    applySettingsToUI();
     initClock();
     initNavigation();
     initCashierCartEvents();
@@ -281,8 +294,8 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTransactionsHistory();
     updateDashboard();
 
-    // Lucide Icons Initialization
-    lucide.createIcons();
+    // Initialise Local Authentication
+    initAuth();
 });
 
 // Live Clock
@@ -316,70 +329,84 @@ function initMobileSidebar() {
 // 5. Sidebar Navigation Controller
 function initNavigation() {
     const navItems = document.querySelectorAll('.nav-item');
-    const screens = document.querySelectorAll('.app-screen');
-    const pageTitle = document.getElementById('page-title');
 
     navItems.forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
+            
+            // Check if it's the Logout button
+            if (item.id === 'nav-logout' || item.classList.contains('nav-logout')) {
+                if (confirm('Apakah Anda yakin ingin keluar dari sistem?')) {
+                    logout();
+                }
+                return;
+            }
+
             const tabName = item.getAttribute('data-tab');
+            if (!tabName) return;
 
-            // Update Active State on Links
-            navItems.forEach(nav => nav.classList.remove('active'));
-            item.classList.add('active');
-
-            // Switch Active Screen
-            screens.forEach(screen => screen.classList.remove('active'));
-            const targetScreen = document.getElementById(`screen-${tabName}`);
-            if (targetScreen) targetScreen.classList.add('active');
+            // Route using centralized tab router
+            routeToTab(tabName);
 
             // Close mobile sidebar if open
-            document.querySelector('.sidebar').classList.remove('open');
-
-            // Update Page Header Title
-            state.activeTab = tabName;
-            switch (tabName) {
-                case 'dashboard':
-                    pageTitle.textContent = 'Dashboard Utama';
-                    updateDashboard();
-                    break;
-                case 'cashier':
-                    pageTitle.textContent = 'Mesin Kasir (POS)';
-                    renderCashierMenu();
-                    break;
-                case 'menu-management':
-                    pageTitle.textContent = 'Kelola Menu & Stok';
-                    // Automatically trigger active subtab render
-                    const activeSubtab = document.querySelector('.sub-nav-btn.active');
-                    if (activeSubtab) {
-                        const subtab = activeSubtab.getAttribute('data-subtab');
-                        if (subtab === 'menu-list') renderMenuManagementTable();
-                        else renderStockTable();
-                    } else {
-                        document.querySelector('.sub-nav-btn[data-subtab="menu-list"]').click();
-                    }
-                    break;
-                case 'history':
-                    pageTitle.textContent = 'Riwayat Transaksi';
-                    renderTransactionsHistory();
-                    break;
-                case 'expenses':
-                    pageTitle.textContent = 'Pengeluaran Kas Warung';
-                    renderExpensesTable();
-                    break;
-                case 'settings':
-                    pageTitle.textContent = 'Pengaturan Warung';
-                    loadSettingsForm();
-                    break;
-            }
-            lucide.createIcons();
+            const sidebar = document.querySelector('.sidebar');
+            if (sidebar) sidebar.classList.remove('open');
         });
     });
+}
 
-    // Dashboard "Lihat Semua" button redirection
-    document.getElementById('dashboard-view-all-btn').addEventListener('click', () => {
-        document.getElementById('nav-history').click();
-    });
+function routeToTab(tabName) {
+    const navItems = document.querySelectorAll('.nav-item');
+    const screens = document.querySelectorAll('.app-screen');
+    const pageTitle = document.getElementById('page-title');
+
+    // Update Active State on Links
+    navItems.forEach(nav => nav.classList.remove('active'));
+    const activeLink = document.querySelector(`.nav-item[data-tab="${tabName}"]`);
+    if (activeLink) activeLink.classList.add('active');
+
+    // Switch Active Screen
+    screens.forEach(screen => screen.classList.remove('active'));
+    const targetScreen = document.getElementById(`screen-${tabName}`);
+    if (targetScreen) targetScreen.classList.add('active');
+
+    // Update Page Header Title
+    state.activeTab = tabName;
+    switch (tabName) {
+        case 'dashboard':
+            pageTitle.textContent = 'Dashboard Utama';
+            updateDashboard();
+            break;
+        case 'cashier':
+            pageTitle.textContent = 'Mesin Kasir (POS)';
+            renderCashierMenu();
+            break;
+        case 'menu-management':
+            pageTitle.textContent = 'Kelola Menu & Stok';
+            const activeSubtab = document.querySelector('.sub-nav-btn.active');
+            if (activeSubtab) {
+                const subtab = activeSubtab.getAttribute('data-subtab');
+                if (subtab === 'menu-list') renderMenuManagementTable();
+                else renderStockTable();
+            } else {
+                const defaultSub = document.querySelector('.sub-nav-btn[data-subtab="menu-list"]');
+                if (defaultSub) defaultSub.click();
+            }
+            break;
+        case 'history':
+            pageTitle.textContent = 'Riwayat Transaksi';
+            renderTransactionsHistory();
+            break;
+        case 'expenses':
+            pageTitle.textContent = 'Pengeluaran Kas Warung';
+            renderExpensesTable();
+            break;
+        case 'settings':
+            pageTitle.textContent = 'Pengaturan Warung';
+            loadSettingsForm();
+            break;
+    }
+    lucide.createIcons();
 }
 
 // 6. CASHIER - POS SYSTEM LOGIC
@@ -1036,6 +1063,8 @@ window.openEditMenuModal = function (id) {
 };
 
 function saveMenuItem() {
+    if (!checkAdminRole()) return;
+
     const id = document.getElementById('menu-form-id').value;
     const name = document.getElementById('menu-form-name').value.trim();
     const category = document.getElementById('menu-form-category').value;
@@ -1072,6 +1101,8 @@ function saveMenuItem() {
 }
 
 window.deleteMenuItem = function (id) {
+    if (!checkAdminRole()) return;
+
     const item = state.menuItems.find(i => i.id === id);
     if (!item) return;
 
@@ -1131,6 +1162,13 @@ function renderTransactionsHistory() {
             month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
         });
 
+        const isAdmin = state.currentUser && state.currentUser.username === 'admin';
+        const deleteBtnHtml = isAdmin ? `
+            <button class="btn-icon delete-action" title="Hapus Transaksi" onclick="deleteTransaction('${trx.id}')">
+                <i data-lucide="trash-2"></i>
+            </button>
+        ` : '';
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><strong>${trx.id}</strong></td>
@@ -1145,9 +1183,7 @@ function renderTransactionsHistory() {
                     <button class="btn-icon print-action" title="Cetak Ulang Struk" onclick="reprintReceipt('${trx.id}')">
                         <i data-lucide="printer"></i>
                     </button>
-                    <button class="btn-icon delete-action" title="Hapus Transaksi" onclick="deleteTransaction('${trx.id}')">
-                        <i data-lucide="trash-2"></i>
-                    </button>
+                    ${deleteBtnHtml}
                 </div>
             </td>
         `;
@@ -1190,6 +1226,8 @@ window.reprintReceipt = function (trxId) {
 };
 
 window.deleteTransaction = function (trxId) {
+    if (!checkAdminRole()) return;
+
     if (confirm(`Apakah Anda yakin ingin menghapus transaksi "${trxId}"? Tindakan ini akan mengubah laporan keuangan.`)) {
         state.transactions = state.transactions.filter(t => t.id !== trxId);
         storage.saveTransactions();
@@ -1202,6 +1240,8 @@ window.deleteTransaction = function (trxId) {
 
 // Export to CSV Function
 function exportTransactionsToCSV() {
+    if (!checkAdminRole()) return;
+
     if (state.transactions.length === 0) {
         showToast('Tidak ada transaksi untuk diekspor!', 'error');
         return;
@@ -1570,6 +1610,7 @@ function initSettingsEvents() {
 
     form.addEventListener('submit', (e) => {
         e.preventDefault();
+        if (!checkAdminRole()) return;
 
         state.settings = {
             name: document.getElementById('set-shop-name').value.trim(),
@@ -1590,6 +1631,7 @@ function initSettingsEvents() {
     const resetBtn = document.getElementById('btn-reset-settings');
     if (resetBtn) {
         resetBtn.addEventListener('click', () => {
+            if (!checkAdminRole()) return;
             if (confirm('Apakah Anda yakin ingin mengembalikan pengaturan warung ke bawaan awal?')) {
                 state.settings = { ...DEFAULT_SETTINGS };
                 storage.saveSettings();
@@ -1605,6 +1647,8 @@ function initSettingsEvents() {
 // FEATURE 1: Z-REPORT PRINT ENGINE (DAILY CLOSURE)
 // ==========================================================================
 function printZReport() {
+    if (!checkAdminRole()) return;
+
     const todayStr = new Date().toISOString().split('T')[0];
     const todayTransactions = state.transactions.filter(t => t.timestamp.split('T')[0] === todayStr);
     const todayExpensesList = state.expenses.filter(e => e.date.split('T')[0] === todayStr);
@@ -1654,7 +1698,7 @@ function printZReport() {
             </div>
             <div class="receipt-meta-row">
                 <span>Operator:</span>
-                <span>Pak Asyari (Owner)</span>
+                <span>${state.currentUser ? state.currentUser.name : 'Unknown'}</span>
             </div>
             <div class="receipt-meta-row">
                 <span>Total Struk:</span>
@@ -1872,6 +1916,8 @@ window.openEditStockModal = function (id) {
 };
 
 function saveStockItem() {
+    if (!checkAdminRole()) return;
+
     const id = document.getElementById('stock-form-id').value;
     const name = document.getElementById('stock-form-name').value.trim();
     const qty = Number(document.getElementById('stock-form-qty').value);
@@ -1900,7 +1946,9 @@ function saveStockItem() {
     renderStockTable();
 }
 
-window.deleteStockItem = function (id) {
+window.deleteStockItem = function(id) {
+    if (!checkAdminRole()) return;
+
     const ing = state.ingredients.find(i => i.id === id);
     if (!ing) return;
 
@@ -2028,6 +2076,8 @@ window.openEditExpenseModal = function (id) {
 };
 
 function saveExpense() {
+    if (!checkAdminRole()) return;
+
     const id = document.getElementById('expense-form-id').value;
     const title = document.getElementById('expense-form-title').value.trim();
     const amount = Number(document.getElementById('expense-form-amount').value);
@@ -2059,7 +2109,9 @@ function saveExpense() {
     updateDashboard();
 }
 
-window.deleteExpense = function (id) {
+window.deleteExpense = function(id) {
+    if (!checkAdminRole()) return;
+
     const exp = state.expenses.find(e => e.id === id);
     if (!exp) return;
 
@@ -2100,4 +2152,270 @@ function initChartEvents() {
             renderDashboardSalesChart();
         });
     });
+}
+
+// ==========================================================================
+// FEATURE: LOCAL LOGIN & ROLE-BASED ACCESS CONTROL
+// ==========================================================================
+function initAuth() {
+    const loginRoot = document.getElementById('login-root');
+    const appRoot = document.getElementById('app-root');
+    const loginForm = document.getElementById('login-form');
+    const usernameInput = document.getElementById('login-username');
+    const passwordInput = document.getElementById('login-password');
+    const togglePasswordBtn = document.getElementById('btn-toggle-login-password');
+    const eyeIcon = document.getElementById('login-eye-icon');
+    const errorMsg = document.getElementById('login-error-msg');
+    const errorText = document.getElementById('login-error-text');
+
+    // Show current shop name in login screen
+    const loginShopName = document.getElementById('login-shop-name');
+    const loginShopTagline = document.getElementById('login-shop-tagline');
+    if (loginShopName && state.settings.name) {
+        loginShopName.textContent = state.settings.name;
+    }
+    if (loginShopTagline && state.settings.tagline) {
+        loginShopTagline.textContent = state.settings.tagline;
+    }
+
+    // Toggle Password Visibility
+    if (togglePasswordBtn && passwordInput) {
+        togglePasswordBtn.addEventListener('click', () => {
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            if (type === 'password') {
+                eyeIcon.setAttribute('data-lucide', 'eye');
+            } else {
+                eyeIcon.setAttribute('data-lucide', 'eye-off');
+            }
+            lucide.createIcons();
+        });
+    }
+
+    // Form Submit
+    if (loginForm) {
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = usernameInput.value.trim().toLowerCase();
+            const password = passwordInput.value;
+
+            const user = USERS[username];
+            if (user && user.password === password) {
+                // Success
+                state.currentUser = { ...user };
+                // Save to localStorage
+                localStorage.setItem('soto_pos_user', JSON.stringify({ username }));
+                
+                // Hide error
+                errorMsg.style.display = 'none';
+                
+                // Clean inputs
+                usernameInput.value = '';
+                passwordInput.value = '';
+
+                showToast(`Selamat datang, ${user.name}!`, 'success');
+                
+                // Setup session view
+                enterApp();
+            } else {
+                // Error
+                errorMsg.style.display = 'flex';
+                errorText.textContent = 'Nama pengguna atau kata sandi salah!';
+                
+                // Shake effect
+                const card = document.querySelector('.login-card');
+                if (card) {
+                    card.classList.add('login-shake');
+                    setTimeout(() => card.classList.remove('login-shake'), 400);
+                }
+            }
+        });
+    }
+
+    // Check stored user
+    const storedUserStr = localStorage.getItem('soto_pos_user');
+    if (storedUserStr) {
+        try {
+            const stored = JSON.parse(storedUserStr);
+            const user = USERS[stored.username];
+            if (user) {
+                state.currentUser = { ...user };
+                enterApp();
+                return;
+            }
+        } catch (e) {
+            console.error('Error parsing stored user', e);
+        }
+    }
+
+    // Show login screen if not logged in
+    if (loginRoot) loginRoot.style.display = 'flex';
+    if (appRoot) appRoot.style.display = 'none';
+}
+
+function enterApp() {
+    const loginRoot = document.getElementById('login-root');
+    const appRoot = document.getElementById('app-root');
+    
+    if (loginRoot) loginRoot.style.display = 'none';
+    if (appRoot) appRoot.style.display = 'flex';
+
+    // Apply role rules
+    applyRoleRestrictions();
+
+    // Trigger full initialization and render
+    applySettingsToUI();
+    
+    // Default Tab routing based on role
+    let targetTab = 'dashboard';
+    if (state.currentUser.username === 'kasir') {
+        targetTab = 'cashier';
+    }
+    
+    // Route to initial active tab
+    routeToTab(targetTab);
+    
+    lucide.createIcons();
+}
+
+function logout() {
+    state.currentUser = null;
+    localStorage.removeItem('soto_pos_user');
+    showToast('Anda telah keluar dari sistem.', 'info');
+    
+    // Hide app, show login
+    const loginRoot = document.getElementById('login-root');
+    const appRoot = document.getElementById('app-root');
+    if (loginRoot) loginRoot.style.display = 'flex';
+    if (appRoot) appRoot.style.display = 'none';
+    
+    // Reset login form fields
+    const uInput = document.getElementById('login-username');
+    const pInput = document.getElementById('login-password');
+    const err = document.getElementById('login-error-msg');
+    if (uInput) uInput.value = '';
+    if (pInput) pInput.value = '';
+    if (err) err.style.display = 'none';
+    
+    // Update login headers if settings changed in between
+    const loginShopName = document.getElementById('login-shop-name');
+    const loginShopTagline = document.getElementById('login-shop-tagline');
+    if (loginShopName && state.settings.name) {
+        loginShopName.textContent = state.settings.name;
+    }
+    if (loginShopTagline && state.settings.tagline) {
+        loginShopTagline.textContent = state.settings.tagline;
+    }
+}
+
+function applyRoleRestrictions() {
+    const user = state.currentUser;
+    if (!user) return;
+
+    // Update Header Profile Info
+    const avatarEl = document.querySelector('.profile-avatar');
+    const nameEl = document.querySelector('.profile-name');
+    const roleEl = document.querySelector('.profile-role');
+    const headerStats = document.querySelector('.quick-stats-mini');
+
+    if (avatarEl) avatarEl.textContent = user.avatar;
+    if (nameEl) nameEl.textContent = user.username === 'admin' ? (state.settings.name ? `Pak ${state.settings.name.split(' ').slice(-1)[0]}` : user.name) : user.name;
+    if (roleEl) roleEl.textContent = user.role;
+
+    // Enforce visibility of sidebar nav-items
+    const navDashboard = document.getElementById('nav-dashboard');
+    const navMenu = document.getElementById('nav-menu');
+    const navExpenses = document.getElementById('nav-expenses');
+    const navSettings = document.getElementById('nav-settings');
+
+    if (user.username === 'kasir') {
+        // Hide restricted tabs in sidebar
+        if (navDashboard) navDashboard.style.display = 'none';
+        if (navMenu) navMenu.style.display = 'none';
+        if (navExpenses) navExpenses.style.display = 'none';
+        if (navSettings) navSettings.style.display = 'none';
+
+        // Hide mini header stats
+        if (headerStats) headerStats.style.display = 'none';
+
+        // Hide Z-Report & CSV export in history screen
+        const btnZReport = document.getElementById('btn-z-report');
+        const btnExportCSV = document.getElementById('btn-export-csv');
+        if (btnZReport) btnZReport.style.display = 'none';
+        if (btnExportCSV) btnExportCSV.style.display = 'none';
+    } else {
+        // Show everything for admin
+        if (navDashboard) navDashboard.style.display = 'flex';
+        if (navMenu) navMenu.style.display = 'flex';
+        if (navExpenses) navExpenses.style.display = 'flex';
+        if (navSettings) navSettings.style.display = 'flex';
+        if (headerStats) headerStats.style.display = 'flex';
+
+        const btnZReport = document.getElementById('btn-z-report');
+        const btnExportCSV = document.getElementById('btn-export-csv');
+        if (btnZReport) btnZReport.style.display = 'inline-flex';
+        if (btnExportCSV) btnExportCSV.style.display = 'inline-flex';
+    }
+}
+
+function routeToTab(tabName) {
+    state.activeTab = tabName;
+    
+    // Update active nav-items
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(nav => {
+        if (nav.getAttribute('data-tab') === tabName) {
+            nav.classList.add('active');
+        } else {
+            nav.classList.remove('active');
+        }
+    });
+
+    // Update screen
+    const screens = document.querySelectorAll('.app-screen');
+    screens.forEach(screen => {
+        if (screen.id === `screen-${tabName}`) {
+            screen.classList.add('active');
+        } else {
+            screen.classList.remove('active');
+        }
+    });
+
+    // Update Header
+    const pageTitle = document.getElementById('page-title');
+    if (pageTitle) {
+        switch (tabName) {
+            case 'dashboard':
+                pageTitle.textContent = 'Dashboard Utama';
+                updateDashboard();
+                break;
+            case 'cashier':
+                pageTitle.textContent = 'Mesin Kasir (POS)';
+                renderCashierMenu();
+                break;
+            case 'menu-management':
+                pageTitle.textContent = 'Kelola Menu & Stok';
+                const activeSubtab = document.querySelector('.sub-nav-btn.active');
+                if (activeSubtab) {
+                    const subtab = activeSubtab.getAttribute('data-subtab');
+                    if (subtab === 'menu-list') renderMenuManagementTable();
+                    else renderStockTable();
+                } else {
+                    renderMenuManagementTable();
+                }
+                break;
+            case 'history':
+                pageTitle.textContent = 'Riwayat Transaksi';
+                renderTransactionsHistory();
+                break;
+            case 'expenses':
+                pageTitle.textContent = 'Pencatatan Pengeluaran';
+                renderExpensesTable();
+                break;
+            case 'settings':
+                pageTitle.textContent = 'Pengaturan Warung';
+                loadSettingsForm();
+                break;
+        }
+    }
 }
